@@ -72,8 +72,9 @@ def merge_eval(env_fn,
     ##### choose an trained agent #######
     agent_path = "trained_models/" + choose_agent + ".pt"
     if 'DuelingDQN' in choose_agent:
-        agent = DuelingDeepQNetwork()
-        agent = torch.load(agent_path)
+        pass
+        # agent = DuelingDeepQNetwork()
+        # agent = torch.load(agent_path)
     else:
         agent = torch.load(agent_path)
     

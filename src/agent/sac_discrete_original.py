@@ -521,6 +521,7 @@ def train(config, logger_kwargs=dict()):
                 state = env.reset()
                 state = state[1:].flatten()
                 episode_steps, rewards, costs = 0, 0, 0
+                print("steps:", steps, "-----------------")
 
             if steps % config.update_freq == 0:
                 for _ in range(config.update_freq):
@@ -577,9 +578,11 @@ def train(config, logger_kwargs=dict()):
 if __name__ == "__main__":
     # config
     parser = argparse.ArgumentParser(description='RL')
-    parser.add_argument("--proj_name", type=str, default="Baseline")
-    parser.add_argument("--run_name", type=str, default="SACD", help="Run name, default: baseline")
-    parser.add_argument("--env", type=str, default="merge_game_env-v0",
+    parser.add_argument("--proj_name", type=str, default="Baseline_highway")
+    # parser.add_argument("--run_name", type=str, default="SACD", help="Run name, default: baseline")
+    parser.add_argument("--run_name", type=str, default="SACD-highway-v8", help="Run name, default: baseline")
+    # parser.add_argument("--env", type=str, default="merge_game_env-v0",
+    parser.add_argument("--env", type=str, default="highway-v8",
                         help="Gym environment name, default: CartPole-v0")
     parser.add_argument("--buffer_size", type=int, default=100_000,
                         help="Maximal training dataset size, default: 100_000")

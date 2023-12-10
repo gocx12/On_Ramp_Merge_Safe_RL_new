@@ -315,8 +315,8 @@ class Road(object):
         """
         for vehicle in self.vehicles:
             vehicle.step(dt)
-            if vehicle.position[0] > self.road_ends:
-                self.vehicles.remove(vehicle)
+            # if vehicle.position[0] > self.road_ends:
+            #     self.vehicles.remove(vehicle)
         for i, vehicle in enumerate(self.vehicles):
             for other in self.vehicles[i+1:]:
                 vehicle.handle_collisions(other, dt)
@@ -354,12 +354,12 @@ class Road(object):
                     s_rear = s_v
                     v_rear = v
         
-        cooperate_start = self.network.get_lane(("b","c",0)).start[0]-30
-        cooperate_end = self.network.get_lane(("b","c",0)).start[0]
-        if consider_ego and self.ego_vehicle.position[0]>vehicle.position[0] and vehicle.position[0]<cooperate_end and vehicle.position[0] > cooperate_start:
-            if  v_front is None or self.ego_vehicle.position[0]<v_front.position[0]:
-                v_front = copy.deepcopy(self.ego_vehicle)
-                v_front.position[1] = vehicle.position[1]
+        # cooperate_start = self.network.get_lane(("b","c",0)).start[0]-30
+        # cooperate_end = self.network.get_lane(("b","c",0)).start[0]
+        # if consider_ego and self.ego_vehicle.position[0]>vehicle.position[0] and vehicle.position[0]<cooperate_end and vehicle.position[0] > cooperate_start:
+        #     if  v_front is None or self.ego_vehicle.position[0]<v_front.position[0]:
+        #         v_front = copy.deepcopy(self.ego_vehicle)
+        #         v_front.position[1] = vehicle.position[1]
             
         return v_front, v_rear
 

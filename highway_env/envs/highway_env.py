@@ -41,6 +41,7 @@ class HighwayEnv(AbstractEnv):
                                        # lower speeds according to config["reward_speed_range"].
             "lane_change_reward": 0,   # The reward received at each lane change action.
             "reward_speed_range": [20, 30],
+            "forward_veh_distance_reward": 0,
             "offroad_terminal": False
         })
         return config
@@ -88,7 +89,8 @@ class HighwayEnv(AbstractEnv):
         reward = \
             + self.config["collision_reward"] * self.vehicle.crashed \
             + self.config["right_lane_reward"] * lane / max(len(neighbours) - 1, 1) \
-            + self.config["high_speed_reward"] * np.clip(scaled_speed, 0, 1)
+            + self.config["high_speed_reward"] * np.clip(scaled_speed, 0, 1) \
+            + self.config["lane_change_reward"] * (action == 0 or action == 2) 
         reward = utils.lmap(reward,
                           [self.config["collision_reward"],
                            self.config["high_speed_reward"] + self.config["right_lane_reward"]],
@@ -133,6 +135,174 @@ class HighwayEnvFast(HighwayEnv):
             if vehicle not in self.controlled_vehicles:
                 vehicle.check_collisions = False
 
+class HighwayEnv1Lane(HighwayEnv):
+    @classmethod
+    def default_config(cls) -> dict:
+        cfg = super().default_config()
+        cfg.update({
+            "lanes_count": 1,
+        })
+        return cfg
+    
+class HighwayEnv1LaneV1(HighwayEnv):
+    @classmethod
+    def default_config(cls) -> dict:
+        cfg = super().default_config()
+        cfg.update({
+            "lanes_count": 2,
+            "vehicles_density": 2,
+        })
+        return cfg
+    
+class HighwayEnvV2(HighwayEnv):
+    @classmethod
+    def default_config(cls) -> dict:
+        cfg = super().default_config()
+        cfg.update({
+            "lanes_count": 2,
+            "vehicles_density": 2,
+            "collision_reward": -1,   
+            "right_lane_reward": 0, 
+            "high_speed_reward": 0.4,  
+            "lane_change_reward": 0,  
+            "reward_speed_range": [10, 20]
+        })
+        return cfg
+
+class HighwayEnvV3(HighwayEnv):
+    @classmethod
+    def default_config(cls) -> dict:
+        cfg = super().default_config()
+        cfg.update({
+            "lanes_count": 2,
+            "vehicles_density": 2,
+            "collision_reward": -1,   
+            "right_lane_reward": 0, 
+            "high_speed_reward": 0.4,  
+            "lane_change_reward": 0,  
+            "reward_speed_range": [0, 20]
+        })
+        return cfg
+
+class HighwayEnvV4(HighwayEnv):
+    @classmethod
+    def default_config(cls) -> dict:
+        cfg = super().default_config()
+        cfg.update({
+            "lanes_count": 2,
+            "vehicles_density": 2,
+            "collision_reward": -1,   
+            "right_lane_reward": 0, 
+            "high_speed_reward": 0.4,  
+            "lane_change_reward": -1,  
+            "reward_speed_range": [0, 10]
+        })
+        return cfg
+
+class HighwayEnvV5(HighwayEnv):
+    @classmethod
+    def default_config(cls) -> dict:
+        cfg = super().default_config()
+        cfg.update({
+            "lanes_count": 2,
+            "vehicles_density": 2,
+            "collision_reward": -1,   
+            "right_lane_reward": 0, 
+            "high_speed_reward": 0.4,  
+            "lane_change_reward": -1,  
+            "reward_speed_range": [0, 10],
+            "forward_veh_distance_reward": -0.01
+        })
+        return cfg
+    
+    def _reward(self, action: Action) -> float:
+        """
+        The reward is defined to foster driving at high speed, on the rightmost lanes, and to avoid collisions.
+        :param action: the last action performed
+        :return: the corresponding reward
+        """
+        neighbours = self.road.network.all_side_lanes(self.vehicle.lane_index)
+        lane = self.vehicle.target_lane_index[2] if isinstance(self.vehicle, ControlledVehicle) \
+            else self.vehicle.lane_index[2]
+        scaled_speed = utils.lmap(self.vehicle.speed, self.config["reward_speed_range"], [0, 1])
+        
+        forward_veh_dis_reciprocal = 0
+        lane_index = self.vehicle.lane_index
+        veh_front, veh_rear = self.road.neighbour_vehicles(self.vehicle)
+        dis = 26
+        if veh_front != None:
+            dis = veh_front.position[0] - self.vehicle.position[0]
+        if dis <= 25:
+            forward_veh_dis_reciprocal = 1/dis
+
+        reward = \
+            + self.config["collision_reward"] * self.vehicle.crashed \
+            + self.config["right_lane_reward"] * lane / max(len(neighbours) - 1, 1) \
+            + self.config["high_speed_reward"] * np.clip(scaled_speed, 0, 1) \
+            + self.config["lane_change_reward"] * (action == 0 or action == 2) \
+            + self.config["forward_veh_distance_reward"] * (abs(dis - 25)) 
+        
+        reward = utils.lmap(reward,
+                          [self.config["collision_reward"],
+                           self.config["high_speed_reward"] + self.config["right_lane_reward"]],
+                          [0, 1])
+        reward = 0 if not self.vehicle.on_road else reward
+        return reward
+
+class HighwayEnvV6(HighwayEnvV5):
+    @classmethod
+    def default_config(cls) -> dict:
+        cfg = super().default_config()
+        cfg.update({
+            "lanes_count": 2,
+            "vehicles_density": 2,
+            "collision_reward": -2,   
+            "right_lane_reward": 0, 
+            "high_speed_reward": 0.4,  
+            "lane_change_reward": -1,  
+            "reward_speed_range": [0, 10],
+            "forward_veh_distance_reward": -0.01
+        })
+        return cfg
+    def _reset(self) -> None:
+        self._create_road()
+        while True:
+            self._create_vehicles()
+            veh_front, veh_rear = self.road.neighbour_vehicles(self.vehicle)
+            if veh_front != None:
+                dis = veh_front.position[0] - self.vehicle.position[0]
+            if dis > 20:
+                break
+
+class HighwayEnvV7(HighwayEnvV5):
+    def _reset(self) -> None:
+        self._create_road()
+        while True:
+            self._create_vehicles()
+            veh_front, veh_rear = self.road.neighbour_vehicles(self.vehicle)
+            if veh_front != None:
+                dis = veh_front.position[0] - self.vehicle.position[0]
+            if dis > 20:
+                break
+
+class HighwayEnvV8(HighwayEnvV5):
+    @classmethod
+    def default_config(cls) -> dict:
+        cfg = super().default_config()
+        cfg.update({
+            "lanes_count": 2,
+            "vehicles_density": 1.5,
+            "collision_reward": -2,   
+            "right_lane_reward": 0, 
+            "high_speed_reward": 0.4,  
+            "lane_change_reward": -1,  
+            "reward_speed_range": [0, 10],
+            "forward_veh_distance_reward": -0.01
+        })
+        return cfg
+
+class HighwayEnvV9(HighwayEnvV8):
+    pass
 
 register(
     id='highway-v0',
@@ -142,4 +312,50 @@ register(
 register(
     id='highway-fast-v0',
     entry_point='highway_env.envs:HighwayEnvFast',
+)
+
+
+register(
+    id='highway-1lane-v0',
+    entry_point='highway_env.envs:HighwayEnv1Lane',
+)
+
+register(
+    id='highway-1lane-v1',
+    entry_point='highway_env.envs:HighwayEnv1LaneV1',
+)
+
+register(
+    id='highway-v2',
+    entry_point='highway_env.envs:HighwayEnvV2',
+)
+
+register(
+    id='highway-v3',
+    entry_point='highway_env.envs:HighwayEnvV3',
+)
+
+register(
+    id='highway-v4',
+    entry_point='highway_env.envs:HighwayEnvV4',
+)
+
+register(
+    id='highway-v5',
+    entry_point='highway_env.envs:HighwayEnvV5',
+)
+
+register(
+    id='highway-v6',
+    entry_point='highway_env.envs:HighwayEnvV6',
+)
+
+register(
+    id='highway-v7',
+    entry_point='highway_env.envs:HighwayEnvV7',
+)
+
+register(
+    id='highway-v8',
+    entry_point='highway_env.envs:HighwayEnvV8',
 )

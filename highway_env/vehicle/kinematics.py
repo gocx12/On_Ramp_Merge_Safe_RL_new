@@ -76,10 +76,12 @@ class Vehicle(RoadObject):
                 speed = road.np_random.uniform(Vehicle.DEFAULT_SPEEDS[0], Vehicle.DEFAULT_SPEEDS[1])
         default_spacing = 12+1.0*speed
         offset = spacing * default_spacing * np.exp(-5 / 40 * len(road.network.graph[_from][_to]))
+        # 遍历已经存在的车辆，找到最大的x0，如果没有车辆，那么x0=3*offset
         x0 = np.max([lane.local_coordinates(v.position)[0] for v in road.vehicles]) \
             if len(road.vehicles) else 3*offset
         x0 += offset * road.np_random.uniform(0.9, 1.1)
-        v = cls(road, lane.position(x0, 0), lane.heading_at(x0), speed, cooperative=cooperative)
+        # v = cls(road, lane.position(x0, 0), lane.heading_at(x0), speed, cooperative=cooperative)
+        v = cls(road, lane.position(x0, 0), lane.heading_at(x0), speed)
         return v
 
     @classmethod

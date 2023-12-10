@@ -542,3 +542,83 @@ class DefensiveVehicle(LinearVehicle):
     ACCELERATION_PARAMETERS = [MERGE_ACC_GAIN / ((1 - MERGE_VEL_RATIO) * MERGE_TARGET_VEL),
                                MERGE_ACC_GAIN / (MERGE_VEL_RATIO * MERGE_TARGET_VEL),
                                2.0]
+
+
+class IDMVehicleModify(IDMVehicle):
+    @classmethod
+    def create_random(cls, road: Road,
+                      speed: float = None,
+                      lane_from: Optional[str] = None,
+                      lane_to: Optional[str] = None,
+                      lane_id: Optional[int] = None,
+                      spacing: float = 1,
+                      cooperative = False) \
+            -> "Vehicle":
+        """
+        Create a random vehicle on the road.
+
+        The lane and /or speed are chosen randomly, while longitudinal position is chosen behind the last
+        vehicle in the road with density based on the number of lanes.
+
+        :param road: the road where the vehicle is driving
+        :param speed: initial speed in [m/s]. If None, will be chosen randomly
+        :param lane_from: start node of the lane to spawn in
+        :param lane_to: end node of the lane to spawn in
+        :param lane_id: id of the lane to spawn in
+        :param spacing: ratio of spacing to the front vehicle, 1 being the default
+        :return: A vehicle with random position and/or speed
+        """
+        _from = lane_from or road.np_random.choice(list(road.network.graph.keys()))
+        _to = lane_to or road.np_random.choice(list(road.network.graph[_from].keys()))
+        _id = lane_id if lane_id is not None else road.np_random.choice(len(road.network.graph[_from][_to]))
+        lane = road.network.get_lane((_from, _to, _id))
+        if speed is None:
+            if lane.speed_limit is not None:
+                speed = road.np_random.uniform(0.7*lane.speed_limit, 0.8*lane.speed_limit)
+            else:
+                speed = road.np_random.uniform(Vehicle.DEFAULT_SPEEDS[0], Vehicle.DEFAULT_SPEEDS[1])
+        default_spacing = 12+1.0*speed
+        offset = spacing * default_spacing * np.exp(-5 / 40 * len(road.network.graph[_from][_to]))
+        # 遍历已经存在的车辆，找到最大的x0，如果没有车辆，那么x0=3*offset
+        x0 = np.max([lane.local_coordinates(v.position)[0] for v in road.vehicles]) \
+            if len(road.vehicles) else 3*offset
+        x0 += offset * road.np_random.uniform(0.9, 1.1)
+        # v = cls(road, lane.position(x0, 0), lane.heading_at(x0), speed, cooperative=cooperative)
+        v = cls(road, lane.position(x0, 0), lane.heading_at(x0), speed)
+        return v
+    
+    def act(self, action: Union[dict, str] = None):
+        """
+        Execute an action.
+
+        For now, no action is supported because the vehicle takes all decisions
+        of acceleration and lane changes on its own, based on the IDM and MOBIL models.
+
+        :param action: the action
+        """
+        if self.crashed:
+            return
+        action = {}
+        # Lateral: MOBIL
+        self.follow_road()
+        if self.enable_lane_change:
+            self.change_lane_policy()
+        action['steering'] = self.steering_control(self.target_lane_index)
+        action['steering'] = np.clip(action['steering'], -self.MAX_STEERING_ANGLE, self.MAX_STEERING_ANGLE)
+
+        # Longitudinal: IDM
+        consider_ego = self.cooperative
+        front_vehicle, rear_vehicle = self.road.neighbour_vehicles(self, self.lane_index, consider_ego)
+        action['acceleration'] = self.acceleration(ego_vehicle=self,
+                                                   front_vehicle=front_vehicle,
+                                                   rear_vehicle=rear_vehicle)
+        # When changing lane, check both current and target lanes
+        if self.lane_index != self.target_lane_index:
+            front_vehicle, rear_vehicle = self.road.neighbour_vehicles(self, self.target_lane_index)
+            target_idm_acceleration = self.acceleration(ego_vehicle=self,
+                                                        front_vehicle=front_vehicle,
+                                                        rear_vehicle=rear_vehicle)
+            action['acceleration'] = min(action['acceleration'], target_idm_acceleration)
+        # action['acceleration'] = self.recover_from_stop(action['acceleration'])
+        action['acceleration'] = np.clip(action['acceleration'], -self.ACC_MAX, self.ACC_MAX)
+        Vehicle.act(self, action)  # Skip ControlledVehicle.act(), or the command will be overriden.
