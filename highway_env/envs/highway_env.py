@@ -7,7 +7,7 @@ from highway_env.envs.common.action import Action
 from highway_env.road.road import Road, RoadNetwork
 from highway_env.utils import near_split
 from highway_env.vehicle.controller import ControlledVehicle
-
+from typing import Optional 
 
 class HighwayEnv(AbstractEnv):
     """
@@ -302,7 +302,31 @@ class HighwayEnvV8(HighwayEnvV5):
         return cfg
 
 class HighwayEnvV9(HighwayEnvV8):
-    pass
+    def _simulate(self, action: Optional[Action] = None) -> None:
+        refer_veh = self.action_type.vehicle_class.create_from(self.controlled_vehicles[0])
+        refer_line = refer_veh.qp_act(self.config["policy_frequency"], self.config["simulation_frequency"],  action)
+        # print(refer_line)
+        # traj = self.traj_optim(refer_line)
+
+        frames = int(self.config["simulation_frequency"] // self.config["policy_frequency"])
+        for frame in range(frames):
+            # Forward action to the vehicle
+            if action is not None \
+                    and not self.config["manual_control"] \
+                    and self.time % int(self.config["simulation_frequency"] // self.config["policy_frequency"]) == 0:
+                self.action_type.act(action)
+
+            self.road.act()
+            self.road.step(1 / self.config["simulation_frequency"])
+            self.time += 1
+
+            # Automatically render intermediate simulation steps if a viewer has been launched
+            # Ignored if the rendering is done offscreen
+            if frame < frames - 1:  # Last frame will be rendered through env.render() as usual
+                self._automatic_rendering()
+
+        self.enable_auto_render = False
+
 
 register(
     id='highway-v0',
@@ -358,4 +382,9 @@ register(
 register(
     id='highway-v8',
     entry_point='highway_env.envs:HighwayEnvV8',
+)
+
+register(
+    id='highway-v9',
+    entry_point='highway_env.envs:HighwayEnvV9',
 )

@@ -10,7 +10,10 @@ from highway_env.road.road import Road, LaneIndex, Route
 from highway_env.utils import Vector
 from highway_env.vehicle.kinematics import Vehicle
 from highway_env.vehicle.MPC_control import MPCSOLVE
-
+from scipy.linalg import solve
+import osqp
+import scipy as sp
+from scipy import sparse
 
 class ControlledVehicle(Vehicle):
     """
@@ -107,20 +110,116 @@ class ControlledVehicle(Vehicle):
             if self.road.network.get_lane(target_lane_index).is_reachable_from(self.position):
                 self.target_lane_index = target_lane_index
         
-        if self.mpc:
-            a, angle = self.mpc_control(self.target_speed, self.target_lane_index)
-            a = a + (self.target_speed - self.speed)
-            action = {'acceleration':a,'steering':angle}
+        # if self.mpc:
+        #     a, angle = self.mpc_control(self.target_speed, self.target_lane_index)
+        #     a = a + (self.target_speed - self.speed)
+        #     action = {'acceleration':a,'steering':angle}
 
-        else:
-            action = {"steering": self.steering_control(self.target_lane_index),
-                  "acceleration": self.speed_control(self.target_speed)}
+        # else:
+        action = {"steering": self.steering_control(self.target_lane_index),
+                "acceleration": self.speed_control(self.target_speed)}
 
         action['steering'] = np.clip(action['steering'], -self.MAX_STEERING_ANGLE, self.MAX_STEERING_ANGLE)
         action['acceleration'] = np.clip(action['acceleration'], -self.MAX_A, self.MAX_A)
 
         super().act(action)
     
+    def qp_act(self, policy_frequency : int , simulation_frequency : int, action : Union[dict, str] = None):
+        refer_line = self.get_refer_line(policy_frequency, simulation_frequency, action)
+        traj = self.traj_optim(refer_line)
+        
+
+    def get_refer_line(self, policy_frequency : int , simulation_frequency : int, action : Union[dict, str] = None) :
+        self.follow_road()
+        target_lane_index = self.target_lane_index
+        if action == "FASTER":
+            self.target_speed += self.DELTA_SPEED
+        elif action == "SLOWER":
+            self.target_speed -= self.DELTA_SPEED
+        elif action == "LANE_RIGHT":
+            _from, _to, _id = self.target_lane_index
+            target_lane_index = _from, _to, np.clip(_id + 1, 0, len(self.road.network.graph[_from][_to]) - 1)
+            if self.road.network.get_lane(target_lane_index).is_reachable_from(self.position):
+                self.target_lane_index = target_lane_index
+        elif action == "LANE_LEFT":
+            _from, _to, _id = self.target_lane_index
+            target_lane_index = _from, _to, np.clip(_id - 1, 0, len(self.road.network.graph[_from][_to]) - 1)
+            if self.road.network.get_lane(target_lane_index).is_reachable_from(self.position):
+                self.target_lane_index = target_lane_index
+        
+        frames = int(simulation_frequency // policy_frequency)
+        time = 1 / policy_frequency
+
+        # 横向参考轨迹用多项式拟合
+        target_lane = self.road.network.get_lane(target_lane_index)
+        lane_coords = target_lane.local_coordinates(self.position)
+        lane_next_coords = lane_coords[0] + self.speed * self.TAU_PURSUIT
+        
+        origin_pose = [self.position[0], self.position[1], self.heading]
+        target_pose = [lane_coords[0], lane_coords[1], target_lane.heading_at(lane_next_coords)]        
+        tri_curve = self.tri_curve(origin_pose, target_pose, policy_frequency)
+
+        # 纵向参考轨迹用匀加速直线运动模型拟合
+        acceleration = (self.target_speed - self.speed) / time
+
+        # 采样
+        t = np.linspace(0, target_pose[0]-origin_pose[0], frames)
+
+        longitudes = self.speed * t + 0.5 * acceleration * t**2
+        latitudes = tri_curve[0] * t**3 + tri_curve[1] * t**2 + tri_curve[2] * t + tri_curve[3]
+
+        print("longitudes:", longitudes, " latitudes:", latitudes)
+        refer_line = np.array([])
+        return refer_line
+
+    def tri_curve(self, origin:list, target:list, policy_frequency:int) :
+        s = target[0] - origin[0]
+        A = np.array([[0, 0, 0, 1],
+                    [s**3, s**2, s, 1],
+                    [0, 0, 1, 0],
+                    [3*s**2, 2**s, 1, 0]])
+        b = np.array([origin[1], target[1], origin[2], target[2]])
+        x = solve(A, b)
+        return x
+
+    def traj_optim(refer_line) -> list:
+        # 优化变量 x = [l0, l0', l0'', ..., ln, ln', ln''] 3*(len(refer_line))
+
+        # Generate problem data
+        n = 3 * len(refer_line)
+        Ad = sparse.random(n, density=0.5, format='csc')
+        x_true = np.random.randn(n) / np.sqrt(n)
+        
+        W_refer = 1
+
+        # OSQP data
+        Im = W_refer * sparse.eye(n)
+        Q = sparse.block_diag([Im], format='csc')
+        f = np.append(np.zeros(n))
+
+        # 等式约束 Aeq * x = beq
+        # 分段加加速度约束
+        Aeq = []
+        A = sparse.bmat([[Ad,   -Im,   -Im,   Im],
+                        [None,  None,  Im,   None],
+                        [None,  None,  None, Im]], format='csc')
+
+        # 不等式约束 A * x <= b
+        # 障碍约束
+        # l = np.hstack([b, np.zeros(2*m)])
+        # u = np.hstack([b, np.inf*np.ones(2*m)])
+
+        # Create an OSQP object
+        prob = osqp.OSQP()
+
+        # Setup workspace
+        prob.setup(Q, f)
+
+        # Solve problem
+        res = prob.solve()
+        print("qp res:", res)
+        return res.x
+
     def safe_act(self, action: Union[dict, str] = None) :
         self.follow_road()
         if action == "FASTER":
