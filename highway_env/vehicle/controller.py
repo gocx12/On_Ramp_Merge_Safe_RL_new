@@ -128,6 +128,10 @@ class ControlledVehicle(Vehicle):
         refer_line = self.get_refer_line(policy_frequency, simulation_frequency, action)
         traj = self.traj_optim(refer_line)
         
+        # traj --> action['acceleration'], action['steering']
+        action['acceleration'] = 0
+        action['steering'] = 0
+        super().act(action)
 
     def get_refer_line(self, policy_frequency : int , simulation_frequency : int, action : Union[dict, str] = None) :
         self.follow_road()
