@@ -127,6 +127,7 @@ class ControlledVehicle(Vehicle):
     def qp_act(self, policy_frequency : int , simulation_frequency : int, action : Union[dict, str] = None):
         refer_line = self.get_refer_line(policy_frequency, simulation_frequency, action)
         traj = self.traj_optim(refer_line)
+        # self.test()
         
         # traj --> action['acceleration'], action['steering']
         action['acceleration'] = 0
@@ -160,7 +161,7 @@ class ControlledVehicle(Vehicle):
         lane_next_coords = lane_coords[0] + self.speed * self.TAU_PURSUIT
         
         origin_pose = [self.position[0], self.position[1], self.heading]
-        target_pose = [lane_coords[0], lane_coords[1], target_lane.heading_at(lane_next_coords)]        
+        target_pose = [lane_next_coords, lane_coords[1], target_lane.heading_at(lane_next_coords)]        
         tri_curve = self.tri_curve(origin_pose, target_pose, policy_frequency)
 
         # 纵向参考轨迹用匀加速直线运动模型拟合
@@ -183,46 +184,71 @@ class ControlledVehicle(Vehicle):
                     [0, 0, 1, 0],
                     [3*s**2, 2**s, 1, 0]])
         b = np.array([origin[1], target[1], origin[2], target[2]])
+        print("A:", A, " b:", b)
         x = solve(A, b)
         return x
 
-    def traj_optim(refer_line) -> list:
+    def traj_optim(self, refer_line) -> list:
         # 优化变量 x = [l0, l0', l0'', ..., ln, ln', ln''] 3*(len(refer_line))
 
         # Generate problem data
-        n = 3 * len(refer_line)
-        Ad = sparse.random(n, density=0.5, format='csc')
-        x_true = np.random.randn(n) / np.sqrt(n)
+        print("refer_line:", len(refer_line))
+        n = 3
+        # Ad = sparse.random(n, density=0.5, format='csc')
+        # x_true = np.random.randn(n) / np.sqrt(n)
         
         W_refer = 1
 
         # OSQP data
-        Im = W_refer * sparse.eye(n)
+        Im = sparse.eye(n)
         Q = sparse.block_diag([Im], format='csc')
-        f = np.append(np.zeros(n))
+        f = np.zeros(n)
 
         # 等式约束 Aeq * x = beq
         # 分段加加速度约束
         Aeq = []
-        A = sparse.bmat([[Ad,   -Im,   -Im,   Im],
-                        [None,  None,  Im,   None],
-                        [None,  None,  None, Im]], format='csc')
+        Zn = sparse.csc_matrix(np.ones((n,n)))
+        A = sparse.bmat([[Zn]], format='csc')
 
         # 不等式约束 A * x <= b
         # 障碍约束
-        # l = np.hstack([b, np.zeros(2*m)])
-        # u = np.hstack([b, np.inf*np.ones(2*m)])
+        l = np.hstack([-np.inf*np.ones(n)])
+        u = np.hstack([np.inf*np.ones(n)])
 
         # Create an OSQP object
         prob = osqp.OSQP()
 
         # Setup workspace
-        prob.setup(Q, f)
+        prob.setup(Q, f, A, l, u)
 
         # Solve problem
         res = prob.solve()
         print("qp res:", res)
         return res.x
+
+    def test(self) :
+        # sp.random.seed(1)
+        m = 30
+        n = 20
+        Ad = sparse.random(m, n, density=0.7, format='csc')
+        b = np.random.randn(m)
+
+        # OSQP data
+        P = sparse.block_diag([sparse.csc_matrix((n, n)), sparse.eye(m)], format='csc')
+        q = np.zeros(n+m)
+        A = sparse.bmat([[Ad,            -sparse.eye(m)],
+                        [sparse.eye(n),  None]], format='csc')
+        l = np.hstack([b, np.zeros(n)])
+        u = np.hstack([b, np.ones(n)])
+
+        # Create an OSQP object
+        prob = osqp.OSQP()
+
+        # Setup workspace
+        prob.setup(P, q, A, l, u)
+
+        # Solve problem
+        res = prob.solve()
 
     def safe_act(self, action: Union[dict, str] = None) :
         self.follow_road()
