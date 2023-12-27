@@ -14,6 +14,7 @@ from scipy.linalg import solve
 import osqp
 import scipy as sp
 from scipy import sparse
+import math
 
 class ControlledVehicle(Vehicle):
     """
@@ -85,49 +86,88 @@ class ControlledVehicle(Vehicle):
             self.route = [self.lane_index]
         return self
 
-    def act(self, action: Union[dict, str] = None) -> None:
+    # def act(self, action: Union[dict, str] = None) -> None:
+    #     """
+    #     Perform a high-level action to change the desired lane or speed.
+
+    #     - If a high-level action is provided, update the target speed and lane;
+    #     - then, perform longitudinal and lateral control.
+
+    #     :param action: a high-level action
+    #     """
+    #     self.follow_road()
+    #     if action == "FASTER":
+    #         self.target_speed += self.DELTA_SPEED
+    #     elif action == "SLOWER":
+    #         self.target_speed -= self.DELTA_SPEED
+    #     elif action == "LANE_RIGHT":
+    #         _from, _to, _id = self.target_lane_index
+    #         target_lane_index = _from, _to, np.clip(_id + 1, 0, len(self.road.network.graph[_from][_to]) - 1)
+    #         if self.road.network.get_lane(target_lane_index).is_reachable_from(self.position):
+    #             self.target_lane_index = target_lane_index
+    #     elif action == "LANE_LEFT":
+    #         _from, _to, _id = self.target_lane_index
+    #         target_lane_index = _from, _to, np.clip(_id - 1, 0, len(self.road.network.graph[_from][_to]) - 1)
+    #         if self.road.network.get_lane(target_lane_index).is_reachable_from(self.position):
+    #             self.target_lane_index = target_lane_index
+        
+    #     # if self.mpc:
+    #     #     a, angle = self.mpc_control(self.target_speed, self.target_lane_index)
+    #     #     a = a + (self.target_speed - self.speed)
+    #     #     action = {'acceleration':a,'steering':angle}
+
+    #     # else:
+    #     action = {"steering": self.steering_control(self.target_lane_index),
+    #             "acceleration": self.speed_control(self.target_speed)}
+
+    #     action['steering'] = np.clip(action['steering'], -self.MAX_STEERING_ANGLE, self.MAX_STEERING_ANGLE)
+    #     action['acceleration'] = np.clip(action['acceleration'], -self.MAX_A, self.MAX_A)
+
+    #     super().act(action)
+
+    def act(self, traj) -> None:
         """
         Perform a high-level action to change the desired lane or speed.
-
-        - If a high-level action is provided, update the target speed and lane;
-        - then, perform longitudinal and lateral control.
-
         :param action: a high-level action
         """
-        self.follow_road()
-        if action == "FASTER":
-            self.target_speed += self.DELTA_SPEED
-        elif action == "SLOWER":
-            self.target_speed -= self.DELTA_SPEED
-        elif action == "LANE_RIGHT":
-            _from, _to, _id = self.target_lane_index
-            target_lane_index = _from, _to, np.clip(_id + 1, 0, len(self.road.network.graph[_from][_to]) - 1)
-            if self.road.network.get_lane(target_lane_index).is_reachable_from(self.position):
-                self.target_lane_index = target_lane_index
-        elif action == "LANE_LEFT":
-            _from, _to, _id = self.target_lane_index
-            target_lane_index = _from, _to, np.clip(_id - 1, 0, len(self.road.network.graph[_from][_to]) - 1)
-            if self.road.network.get_lane(target_lane_index).is_reachable_from(self.position):
-                self.target_lane_index = target_lane_index
-        
-        # if self.mpc:
-        #     a, angle = self.mpc_control(self.target_speed, self.target_lane_index)
-        #     a = a + (self.target_speed - self.speed)
-        #     action = {'acceleration':a,'steering':angle}
+        W_Steer = 1
+        W_Acc = 1
 
-        # else:
+
+        # 找到轨迹中中最近的下一个点
+        s_close = traj[0]
+        l_close = traj[1]
+        for i in range(traj.shape[0]):
+            if traj[i, 0] > self.position[0]:
+                break
+        
+        self.heading
+        self.position[0]
+        self.position[1]
+
+        # 弧度制
+        theta = math.atan((l_close - self.position[1]) / (s_close - self.position[0]))
+        dtheta = self.heading - theta
+        steering = dtheta / math.pi * 180 * W_Steer
+
+        acceleration = (traj[i, 2] - self.speed) * W_Acc
+
+
         action = {"steering": self.steering_control(self.target_lane_index),
                 "acceleration": self.speed_control(self.target_speed)}
+
+
 
         action['steering'] = np.clip(action['steering'], -self.MAX_STEERING_ANGLE, self.MAX_STEERING_ANGLE)
         action['acceleration'] = np.clip(action['acceleration'], -self.MAX_A, self.MAX_A)
 
         super().act(action)
+
     
-    def qp_act(self, policy_frequency : int , simulation_frequency : int, action : Union[dict, str] = None):
+    def get_traj(self, policy_frequency : int , simulation_frequency : int, action : Union[dict, str] = None):
         refer_line = self.get_refer_line(policy_frequency, simulation_frequency, action)
         traj = self.traj_optim(refer_line)
-        # self.test()
+        return traj
         
         # traj --> action['acceleration'], action['steering']
         action['acceleration'] = 0
@@ -168,13 +208,13 @@ class ControlledVehicle(Vehicle):
         acceleration = (self.target_speed - self.speed) / time
 
         # 采样
-        t = np.linspace(0, target_pose[0]-origin_pose[0], frames)
+        ds = np.linspace(0, target_pose[0]-origin_pose[0], frames)
 
-        longitudes = self.speed * t + 0.5 * acceleration * t**2
-        latitudes = tri_curve[0] * t**3 + tri_curve[1] * t**2 + tri_curve[2] * t + tri_curve[3]
+        longitudes = ds # s-t
+        latitudes = tri_curve[0] * ds**3 + tri_curve[1] * ds**2 + tri_curve[2] * ds + tri_curve[3] # s-l
 
         print("longitudes:", longitudes, " latitudes:", latitudes)
-        refer_line = np.array([])
+        refer_line = np.array([longitudes, latitudes])
         return refer_line
 
     def tri_curve(self, origin:list, target:list, policy_frequency:int) :
