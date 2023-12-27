@@ -1,1 +1,1 @@
-python src/evaluate/evaluate_agents.py --exp_name eval_highwayv9 --env highway-v9 --data_file baseline --agents Baseline_highway_SACD-highway-v8_2
+python src/evaluate/evaluate_agents.py --exp_name eval_highwayv9 --env highway-v9 --data_file baseline --agents Baseline_highway_SACD-highway-v8_2 --render

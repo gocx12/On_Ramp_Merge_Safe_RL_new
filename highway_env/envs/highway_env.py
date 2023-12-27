@@ -303,22 +303,25 @@ class HighwayEnvV8(HighwayEnvV5):
 
 class HighwayEnvV9(HighwayEnvV8):
     def _simulate(self, action: Optional[Action] = None) -> None:
-        refer_veh = self.action_type.vehicle_class.create_from(self.controlled_vehicles[0])
-        traj = refer_veh.get_traj(self.config["policy_frequency"], self.config["simulation_frequency"],  action)
-        # print(refer_line)
+        traj = self.controlled_vehicles[0].get_traj(self.config["policy_frequency"], self.config["simulation_frequency"],  action)
+        print("traj", traj)
+
+        is_control = False
 
         frames = int(self.config["simulation_frequency"] // self.config["policy_frequency"])
         for frame in range(frames):
-            # # Forward action to the vehicle
-            # if action is not None \
-            #         and not self.config["manual_control"] \
-            #         and self.time % int(self.config["simulation_frequency"] // self.config["policy_frequency"]) == 0:
-            #     self.action_type.act(action)
-                
-            # Forward action to the vehicle
-            if action is not None \
-                    and not self.config["manual_control"] :
-                self.action_type.act(traj)
+            if is_control:
+                # Forward action to the vehicle
+                if action is not None \
+                        and not self.config["manual_control"] \
+                        and self.time % int(self.config["simulation_frequency"] // self.config["policy_frequency"]) == 0:
+                    self.action_type.act(action)
+            else:
+                # Forward action to the vehicle
+                if action is not None \
+                        and not self.config["manual_control"] :
+                    print(traj, frame)
+                    self.controlled_vehicles[0].control(traj, frame)
 
             self.road.act()
             self.road.step(1 / self.config["simulation_frequency"])
