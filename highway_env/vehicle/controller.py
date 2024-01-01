@@ -95,6 +95,10 @@ class ControlledVehicle(Vehicle):
 
         :param action: a high-level action
         """
+        if type(action) is dict or action == None:
+            super().act(action)
+            return
+
         self.follow_road()
         if action == "FASTER":
             self.target_speed += self.DELTA_SPEED
@@ -328,27 +332,27 @@ class MDPVehicle(ControlledVehicle):
         self.speed_index = self.speed_to_index(self.target_speed)
         self.target_speed = self.index_to_speed(self.speed_index)
 
-    def act(self, action: Union[dict, str] = None) -> None:
-        """
-        Perform a high-level action.
+    # def act(self, action: Union[dict, str] = None) -> None:
+    #     """
+    #     Perform a high-level action.
 
-        - If the action is a speed change, choose speed from the allowed discrete range.
-        - Else, forward action to the ControlledVehicle handler.
+    #     - If the action is a speed change, choose speed from the allowed discrete range.
+    #     - Else, forward action to the ControlledVehicle handler.
 
-        :param action: a high-level action
-        """
-        if action == "FASTER":
-            self.speed_index = self.speed_to_index(self.speed) + 1
-        elif action == "SLOWER":
-            self.speed_index = self.speed_to_index(self.speed) - 1
-        else:
-            super().act(action)
-            return
-        self.speed_index = int(np.clip(self.speed_index, 0, self.SPEED_COUNT - 1))
-        self.target_speed = self.index_to_speed(self.speed_index)
-        super().act()
+    #     :param action: a high-level action
+    #     """
+    #     if action == "FASTER":
+    #         self.speed_index = self.speed_to_index(self.speed) + 1
+    #     elif action == "SLOWER":
+    #         self.speed_index = self.speed_to_index(self.speed) - 1
+    #     else:
+    #         super().act(action)
+    #         return
+    #     self.speed_index = int(np.clip(self.speed_index, 0, self.SPEED_COUNT - 1))
+    #     self.target_speed = self.index_to_speed(self.speed_index)
+    #     super().act()
 
-    def control(self, traj=None, frame=None) -> None:
+    def act(self, traj=None, frame=None) -> None:
         """
         Perform a high-level action to change the desired lane or speed.
         :param action: a high-level action
@@ -356,10 +360,8 @@ class MDPVehicle(ControlledVehicle):
         if traj is None or frame is None:
             return
 
-
         W_Steer = 1
         W_Acc = 1
-
 
         # 找到轨迹中中最近的下一个点
         s_close = traj[0][frame]
@@ -375,11 +377,15 @@ class MDPVehicle(ControlledVehicle):
         # print("dtheta", dtheta)
         steering = dtheta / math.pi * 180 * W_Steer
 
-        acceleration = (traj[1, frame] - self.speed) * W_Acc
+        # print("traj[0]", traj[0], " self.position[0]", self.position[0])
+        acceleration = (traj[0, frame] - self.position[0]) * W_Acc
+        print("steering:", steering, " acceleration:", acceleration)
 
-
+        steering = 0
+        # acceleration = -10
         action = {"steering": steering,
                 "acceleration": acceleration}
+        print("control action:", action)
 
         action['steering'] = np.clip(action['steering'], -self.MAX_STEERING_ANGLE, self.MAX_STEERING_ANGLE)
         action['acceleration'] = np.clip(action['acceleration'], -self.MAX_A, self.MAX_A)
@@ -390,9 +396,9 @@ class MDPVehicle(ControlledVehicle):
     def get_traj(self, policy_frequency : int , simulation_frequency : int, action : Union[dict, str] = None):
         refer_line = self.get_refer_line(policy_frequency, simulation_frequency, action)
         print("refer_line:", refer_line, " position:", self.position)
-        traj = self.traj_optim(refer_line[0])
-        # print("traj:", traj, " refer_line[1]:", refer_line[1])
-        return np.array([traj, refer_line[1]])
+        traj = self.traj_optim(refer_line)
+        print("refer_line:", refer_line, "traj:", traj)
+        return np.array([refer_line[0], traj])
         
         # traj --> action['acceleration'], action['steering']
         action['acceleration'] = 0
@@ -402,6 +408,17 @@ class MDPVehicle(ControlledVehicle):
     def get_refer_line(self, policy_frequency : int , simulation_frequency : int, action : Union[dict, str] = None) :
         self.follow_road()
         target_lane_index = self.target_lane_index
+        
+        ACTIONS_ALL = {
+            0: 'LANE_LEFT',
+            1: 'IDLE',
+            2: 'LANE_RIGHT',
+            3: 'FASTER',
+            4: 'SLOWER'
+        }
+        action = ACTIONS_ALL[action]
+        print("upper action",action)
+
         if action == "FASTER":
             self.target_speed += self.DELTA_SPEED
         elif action == "SLOWER":
@@ -420,25 +437,27 @@ class MDPVehicle(ControlledVehicle):
         frames = int(simulation_frequency // policy_frequency)
         time = 1 / policy_frequency
 
+        # 纵向参考轨迹用匀加速直线运动模型拟合
+        acceleration = (self.target_speed - self.speed) / time
+
         # 横向参考轨迹用多项式拟合
         target_lane = self.road.network.get_lane(target_lane_index)
         lane_coords = target_lane.local_coordinates(self.position)
-        lane_next_coords = lane_coords[0] + self.speed * self.TAU_PURSUIT
+        lane_next_coords = lane_coords[0] + (self.speed + acceleration*(1/policy_frequency)) * self.TAU_PURSUIT
         
         origin_pose = [self.position[0], self.position[1], self.heading]
         target_pose = [lane_next_coords, lane_coords[1], target_lane.heading_at(lane_next_coords)]        
         tri_curve = self.tri_curve(origin_pose, target_pose, policy_frequency)
 
-        # 纵向参考轨迹用匀加速直线运动模型拟合
-        acceleration = (self.target_speed - self.speed) / time
-
         # 采样
         ds = np.linspace(0, target_pose[0]-origin_pose[0], frames)
-        print("ds:", ds)
+        # print("ds:", ds)
         longitudes = origin_pose[0] * np.ones([len(ds)]) + ds # s-t
         latitudes = tri_curve[0] * ds**3 + tri_curve[1] * ds**2 + tri_curve[2] * ds + tri_curve[3] # s-l
 
-        # print("longitudes:", longitudes, " latitudes:", latitudes)
+        # print("longitudes:", longitudes)
+        # print("latitudes:", latitudes)
+        # print("position:", self.position)
         refer_line = np.array([longitudes, latitudes])
         return refer_line
 
@@ -457,28 +476,25 @@ class MDPVehicle(ControlledVehicle):
         # 优化变量 x = [l0, l0', l0'', ..., ln, ln', ln''] 3*(len(refer_line))
 
         # Generate problem data
-        print("refer_line:", len(refer_line))
-        n = len(refer_line)
+        # print("refer_line:", len(refer_line))
+        n = len(refer_line[0])
         # Ad = sparse.random(n, density=0.5, format='csc')
         # x_true = np.random.randn(n) / np.sqrt(n)
         
         W_refer = 1
 
         # OSQP data
-        Im = sparse.eye(n)
+        Im = 2 * sparse.eye(n)
         Q = sparse.block_diag([Im], format='csc')
-        f = np.zeros(n)
+        f = - 2 * refer_line[1] * Q
 
         # 等式约束 Aeq * x = beq
         # 分段加加速度约束
-        Aeq = []
-        Zn = sparse.csc_matrix(np.ones((n,n)))
-        A = sparse.bmat([[Zn]], format='csc')
 
         # 不等式约束 A * x <= b
         # 障碍约束
-
-
+        Zn = sparse.csc_matrix(np.ones((n,n)))
+        A = sparse.bmat([[Zn]], format='csc')
         l = np.hstack([-np.inf*np.ones(n)])
         u = np.hstack([np.inf*np.ones(n)])
         

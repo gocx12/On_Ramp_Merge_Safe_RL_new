@@ -321,7 +321,7 @@ class HighwayEnvV9(HighwayEnvV8):
                 if action is not None \
                         and not self.config["manual_control"] :
                     print(traj, frame)
-                    self.controlled_vehicles[0].control(traj, frame)
+                    self.controlled_vehicles[0].act(traj, frame)
 
             self.road.act()
             self.road.step(1 / self.config["simulation_frequency"])
