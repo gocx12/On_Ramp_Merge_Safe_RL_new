@@ -8,6 +8,8 @@ from highway_env.road.road import Road, RoadNetwork
 from highway_env.utils import near_split
 from highway_env.vehicle.controller import ControlledVehicle
 from typing import Optional 
+from typing import Tuple
+Observation = np.ndarray
 
 class HighwayEnv(AbstractEnv):
     """
@@ -302,8 +304,31 @@ class HighwayEnvV8(HighwayEnvV5):
         return cfg
 
 class HighwayEnvV9(HighwayEnvV8):
-    def _simulate(self, action: Optional[Action] = None) -> None:
-        traj = self.controlled_vehicles[0].get_traj(self.config["policy_frequency"], self.config["simulation_frequency"],  action)
+    def step(self, action: Action, weight_action: Action) -> Tuple[Observation, float, bool, dict]:
+        """
+        Perform an action and step the environment dynamics.
+
+        The action is executed by the ego-vehicle, and all other vehicles on the road performs their default behaviour
+        for several simulation timesteps until the next decision making step.
+
+        :param action: the action performed by the ego-vehicle
+        :return: a tuple (observation, reward, terminal, info)
+        """
+        if self.road is None or self.vehicle is None:
+            raise NotImplementedError("The road and vehicle must be initialized in the environment implementation")
+        
+        self.steps += 1
+        self._simulate(action, weight_action)
+
+        obs = self.observation_type.observe()
+        reward = self._reward(action)
+        terminal = self._is_terminal()
+        info = self._info(obs, action)
+
+        return obs, reward, terminal, info
+    
+    def _simulate(self, action: Optional[Action] = None, weight_action = None) -> None:
+        traj = self.controlled_vehicles[0].get_traj(self.config["policy_frequency"], self.config["simulation_frequency"], action, weight_action)
         print("traj", traj)
 
         is_control = False

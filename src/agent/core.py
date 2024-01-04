@@ -150,16 +150,19 @@ class SAC_Actor(nn.Module):
         self.fc1 = nn.Linear(state_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, action_size)
+        self.fc4 = nn.Linear(hidden_size, 3)
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, state):
         x = F.relu(self.fc1(state))
         x = F.relu(self.fc2(x))
         action_probs = self.softmax(self.fc3(x))
-        return action_probs
+        y = F.relu(self.fc2(x))
+        weight_action_probs = self.softmax(self.fc4(y))
+        return action_probs, weight_action_probs
 
     def evaluate(self, state):
-        action_probs = self.forward(state)
+        action_probs, weight_action_probs = self.forward(state)
 
         dist = Categorical(action_probs)
         action = dist.sample()
@@ -171,10 +174,13 @@ class SAC_Actor(nn.Module):
 
     def step(self, state):
         not_use1, not_use2, not_use3 = 0, 0, 0
-        action_probs = self.forward(state)
+        action_probs, weight_action_probs = self.forward(state)
         dist = Categorical(action_probs)
         action = dist.sample()
-        return action.detach().cpu(), not_use1, not_use2, not_use3
+
+        weight_dist = Categorical(weight_action_probs)
+        weight_action = weight_dist.sample()
+        return action.detach().cpu(), weight_action.detach().cpu(), not_use2, not_use3
 
 class SAC_Critic(nn.Module):
     """Critic (Value) Model."""

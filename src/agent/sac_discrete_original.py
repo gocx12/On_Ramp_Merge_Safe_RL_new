@@ -307,8 +307,8 @@ class SAC(nn.Module):
         state = torch.from_numpy(state).float()
 
         with torch.no_grad():
-            action, _, _, _ = self.actor_local.step(state)
-        return action.numpy()
+            action, weight_aciton, _, _ = self.actor_local.step(state)
+        return action.numpy(), weight_aciton.numpy()
 
     def calc_policy_loss(self, states, ISweight, alpha):
         _, action_probs, log_pis = self.actor_local.evaluate(states)
@@ -419,7 +419,8 @@ def collect_random(env, dataset, num_samples=200):
     state = state[1:].flatten()
     for _ in range(num_samples):
         action = env.action_space.sample()
-        next_state, reward, done, info = env.step(int(action))
+        weight_action = random.randint(0, 2)
+        next_state, reward, done, info = env.step(int(action), weight_action)
         cost = info['cost']
         reward -= cost
         next_state = next_state[1:].flatten()
@@ -499,9 +500,9 @@ def train(config, logger_kwargs=dict()):
         start_time = time.time()
 
         while steps < int(config.num_steps / num_procs()):
-            action = agent.get_action(state)
+            action, weight_action = agent.get_action(state)
 
-            next_state, reward, done, info = env.step(int(action))
+            next_state, reward, done, info = env.step(int(action), int(weight_action))
             cost = info['cost']
             if info['crashed']:
                 crash_counter += 1
@@ -580,9 +581,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='RL')
     parser.add_argument("--proj_name", type=str, default="Baseline_highway")
     # parser.add_argument("--run_name", type=str, default="SACD", help="Run name, default: baseline")
-    parser.add_argument("--run_name", type=str, default="SACD-highway-v8", help="Run name, default: baseline")
+    parser.add_argument("--run_name", type=str, default="SACD-highway-v9", help="Run name, default: baseline")
     # parser.add_argument("--env", type=str, default="merge_game_env-v0",
-    parser.add_argument("--env", type=str, default="highway-v8",
+    parser.add_argument("--env", type=str, default="highway-v9",
                         help="Gym environment name, default: CartPole-v0")
     parser.add_argument("--buffer_size", type=int, default=100_000,
                         help="Maximal training dataset size, default: 100_000")

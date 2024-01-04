@@ -379,13 +379,13 @@ class MDPVehicle(ControlledVehicle):
 
         # print("traj[0]", traj[0], " self.position[0]", self.position[0])
         acceleration = (traj[0, frame] - self.position[0]) * W_Acc
-        print("steering:", steering, " acceleration:", acceleration)
+        # print("steering:", steering, " acceleration:", acceleration)
 
         steering = 0
         # acceleration = -10
         action = {"steering": steering,
                 "acceleration": acceleration}
-        print("control action:", action)
+        # print("control action:", action)
 
         action['steering'] = np.clip(action['steering'], -self.MAX_STEERING_ANGLE, self.MAX_STEERING_ANGLE)
         action['acceleration'] = np.clip(action['acceleration'], -self.MAX_A, self.MAX_A)
@@ -393,11 +393,11 @@ class MDPVehicle(ControlledVehicle):
         super().act(action)
 
     
-    def get_traj(self, policy_frequency : int , simulation_frequency : int, action : Union[dict, str] = None):
+    def get_traj(self, policy_frequency : int , simulation_frequency : int, action : Union[dict, str] = None, weight_action = None):
         refer_line = self.get_refer_line(policy_frequency, simulation_frequency, action)
-        print("refer_line:", refer_line, " position:", self.position)
-        traj = self.traj_optim(refer_line)
-        print("refer_line:", refer_line, "traj:", traj)
+        # print("refer_line:", refer_line, " position:", self.position)
+        traj = self.traj_optim(refer_line, weight_action)
+        # print("refer_line:", refer_line, "traj:", traj)
         return np.array([refer_line[0], traj])
         
         # traj --> action['acceleration'], action['steering']
@@ -417,7 +417,7 @@ class MDPVehicle(ControlledVehicle):
             4: 'SLOWER'
         }
         action = ACTIONS_ALL[action]
-        print("upper action",action)
+        # print("upper action",action)
 
         if action == "FASTER":
             self.target_speed += self.DELTA_SPEED
@@ -472,15 +472,20 @@ class MDPVehicle(ControlledVehicle):
         x = solve(A, b)
         return x
 
-    def traj_optim(self, refer_line):
+    def traj_optim(self, refer_line, weight_action):
         # 优化变量 x = [l0, l0', l0'', ..., ln, ln', ln''] 3*(len(refer_line))
 
         # Generate problem data
         # print("refer_line:", len(refer_line))
         n = len(refer_line[0])
-        # Ad = sparse.random(n, density=0.5, format='csc')
-        # x_true = np.random.randn(n) / np.sqrt(n)
-        
+
+        if weight_action == 0:
+            pass
+        elif weight_action == 1:
+            pass
+        elif weight_action == 2:
+            pass
+
         W_refer = 1
 
         # OSQP data
@@ -505,7 +510,7 @@ class MDPVehicle(ControlledVehicle):
 
         # Solve problem
         res = prob.solve()
-        print("qp res:", res)
+        # print("qp res:", res)
         return np.array(res.x)
 
 
