@@ -273,6 +273,7 @@ class SAC(nn.Module):
         self.clip_grad_param = 1
 
         self.target_entropy = -action_size  # -dim(A)
+        self.target_weight_entropy = -3
         # self.target_entropy = \
         #     -np.log(1.0 / action_size) * target_entropy_ratio
 
@@ -311,14 +312,19 @@ class SAC(nn.Module):
         return action.numpy(), weight_aciton.numpy()
 
     def calc_policy_loss(self, states, ISweight, alpha):
-        _, action_probs, log_pis = self.actor_local.evaluate(states)
+        _, action_probs, log_pis, _, weight_action_probs, log_weight_pis = self.actor_local.evaluate(states)
 
-        q1 = self.critic1(states)
-        q2 = self.critic2(states)
+        q1, weight_q1 = self.critic1(states)
+        q2, weight_q2 = self.critic2(states)
         min_Q = torch.min(q1, q2)
+        min_weight_Q = torch.min(weight_q1, weight_q2)
         actor_loss = (action_probs * (alpha * log_pis - min_Q ) * ISweight).sum(1).mean()
         log_action_pi = -torch.sum(log_pis * action_probs, dim=1)
-        return actor_loss, log_action_pi
+        
+        weight_actor_loss = (weight_action_probs * (alpha * log_weight_pis - min_weight_Q ) * ISweight).sum(1).mean()
+        log_weight_action_pi = -torch.sum(log_weight_pis * weight_action_probs, dim=1)
+
+        return actor_loss, log_action_pi, weight_actor_loss, log_weight_action_pi
 
     def learn(self, experiences, gamma, ISweight, logger=None):
         """Updates actor, critics and entropy_alpha parameters using given batch of experience tuples.
@@ -337,19 +343,21 @@ class SAC(nn.Module):
 
         # ---------------------------- loss actor ---------------------------- #
         current_alpha = copy.deepcopy(self.alpha)
-        actor_loss, entropy = self.calc_policy_loss(states, ISweight, current_alpha)
+        actor_loss, entropy, weight_actor_loss, weight_entropy = self.calc_policy_loss(states, ISweight, current_alpha)
 
         # Compute alpha loss
-        alpha_loss = - (self.log_alpha * (self.target_entropy - entropy.detach()).detach() * ISweight).mean()
+        alpha_loss = - ((self.log_alpha * (self.target_entropy - entropy.detach()).detach() + self.log_alpha * (self.target_weight_entropy - weight_entropy.detach()).detach()) * ISweight).mean()
 
         # ---------------------------- loss critic ---------------------------- #
         # Get predicted next-state actions and Q values from target models
         with torch.no_grad():
-            _, action_probs, log_pis = self.actor_local.evaluate(next_states)
-            Q_target1_next = self.critic1_target(next_states)
-            Q_target2_next = self.critic2_target(next_states)
+            _, action_probs, log_pis, _, weight_actor_probs, log_action_pis = self.actor_local.evaluate(next_states)
+            Q_target1_next, Q_weight_target1_next = self.critic1_target(next_states)
+            Q_target2_next, Q_weight_target2_next = self.critic2_target(next_states)
             Q_target_next = action_probs * (
-                    torch.min(Q_target1_next, Q_target2_next) - self.alpha * log_pis)
+                    torch.min(Q_target1_next, Q_target2_next) - self.alpha * log_pis) + \
+                        weight_actor_probs * (
+                    torch.min(Q_weight_target1_next, Q_weight_target2_next) - self.alpha * log_action_pis)
 
             # Compute Q targets for current states (y_i)
             Q_targets = rewards + (gamma * (1 - dones) * Q_target_next.sum(dim=1).unsqueeze(-1))
@@ -365,6 +373,7 @@ class SAC(nn.Module):
         # actor
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
+        weight_actor_loss.backward()
         mpi_avg_grads(self.actor_local)
         self.actor_optimizer.step()
 

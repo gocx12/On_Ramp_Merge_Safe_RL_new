@@ -170,7 +170,15 @@ class SAC_Actor(nn.Module):
         z = action_probs == 0.0
         z = z.float() * 1e-8
         log_action_probabilities = torch.log(action_probs + z)
-        return action.detach().cpu(), action_probs, log_action_probabilities
+
+        weight_dist = Categorical(weight_action_probs)
+        weight_action = weight_dist.sample()
+        # Have to deal with situation of 0.0 probabilities because we can't do log 0
+        weight_z = weight_action == 0.0
+        weight_z = weight_z.float() * 1e-8
+        log_weight_action_probabilities = torch.log(weight_action_probs + weight_z)
+
+        return action.detach().cpu(), action_probs, log_action_probabilities, weight_action.detach().cpu(), weight_action_probs, log_weight_action_probabilities, 
 
     def step(self, state):
         not_use1, not_use2, not_use3 = 0, 0, 0
@@ -197,11 +205,15 @@ class SAC_Critic(nn.Module):
         self.fc1 = nn.Linear(state_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, action_size)
+        self.fc4 = nn.Linear(hidden_size, 3)
 
     def forward(self, state):
         """Build a critic (value) network that maps (state, action) pairs -> Q-values."""
         x = F.relu(self.fc1(state))
         x = F.relu(self.fc2(x))
-        return self.fc3(x)
+        action_probs = self.softmax(self.fc3(x))
+        y = F.relu(self.fc2(x))
+        weight_action_probs = self.softmax(self.fc4(y))
+        return action_probs, weight_action_probs
 
 

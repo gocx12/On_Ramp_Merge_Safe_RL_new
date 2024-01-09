@@ -480,13 +480,11 @@ class MDPVehicle(ControlledVehicle):
         n = len(refer_line[0])
 
         if weight_action == 0:
-            pass
+            W_refer = 1
         elif weight_action == 1:
-            pass
+            W_refer = 1
         elif weight_action == 2:
-            pass
-
-        W_refer = 1
+            W_refer = 1
 
         # OSQP data
         Im = 2 * sparse.eye(n)
