@@ -371,8 +371,11 @@ class MDPVehicle(ControlledVehicle):
         #         break
         
         # 弧度制
-        theta = math.atan((l_close - self.position[1]) / (s_close - self.position[0]))
-            
+        if (s_close - self.position[0]) > 10e-8:
+            theta = math.atan((l_close - self.position[1]) / (s_close - self.position[0]))
+        else :
+            theta = 0
+
         dtheta = self.heading - theta
         # print("dtheta", dtheta)
         steering = dtheta / math.pi * 180 * W_Steer

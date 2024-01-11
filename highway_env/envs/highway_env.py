@@ -329,7 +329,7 @@ class HighwayEnvV9(HighwayEnvV8):
     
     def _simulate(self, action: Optional[Action] = None, weight_action = None) -> None:
         traj = self.controlled_vehicles[0].get_traj(self.config["policy_frequency"], self.config["simulation_frequency"], action, weight_action)
-        print("traj", traj)
+        # print("traj", traj)
 
         is_control = False
 
@@ -345,7 +345,7 @@ class HighwayEnvV9(HighwayEnvV8):
                 # Forward action to the vehicle
                 if action is not None \
                         and not self.config["manual_control"] :
-                    print(traj, frame)
+                    # print(traj, frame)
                     self.controlled_vehicles[0].act(traj, frame)
 
             self.road.act()

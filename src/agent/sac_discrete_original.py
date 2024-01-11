@@ -372,8 +372,9 @@ class SAC(nn.Module):
         # ---------------------------- update ---------------------------- #
         # actor
         self.actor_optimizer.zero_grad()
-        actor_loss.backward()
-        weight_actor_loss.backward()
+        # actor_loss.backward()
+        # weight_actor_loss.backward()
+        (actor_loss + weight_actor_loss).backward()
         mpi_avg_grads(self.actor_local)
         self.actor_optimizer.step()
 
