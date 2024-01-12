@@ -355,13 +355,13 @@ class SAC(nn.Module):
             Q_target1_next, Q_weight_target1_next = self.critic1_target(next_states)
             Q_target2_next, Q_weight_target2_next = self.critic2_target(next_states)
             Q_target_next = action_probs * (
-                    torch.min(Q_target1_next, Q_target2_next) - self.alpha * log_pis) + \
-                        weight_actor_probs * (
+                    torch.min(Q_target1_next, Q_target2_next) - self.alpha * log_pis)
+            Q_target_next_weight = weight_actor_probs * (
                     torch.min(Q_weight_target1_next, Q_weight_target2_next) - self.alpha * log_action_pis)
 
             # Compute Q targets for current states (y_i)
             Q_targets = rewards + (gamma * (1 - dones) * Q_target_next.sum(dim=1).unsqueeze(-1))
-
+            Q_targets_weight = rewards + (gamma * (1 - dones) * Q_target_next_weight.sum(dim=1).unsqueeze(-1))
             # Compute critic loss
         q1 = self.critic1(states).gather(1, actions.long())
         q2 = self.critic2(states).gather(1, actions.long())
